@@ -42,50 +42,60 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 </header>
 <div id="app"></div>
 </main>
-<script id="data" type="application/json">{"owners":[{"nick":"Alpa41no1","key":"alpa41no1","hash":"f21514c76f226d381a6d2d8fb32f30b7db64a2da8beb6c48aecc78b9740ff19d"}],"horses":[{"id":"imuym55qzy31","owner":"alpa41no1","name":"Dixie La Gentry","breed":"Голштинская","age":"9 лет","vacc":"","check":"","notes":""},{"id":"imuym6krt84k","owner":"alpa41no1","name":"Vivienne la Caillie","breed":"Брабансон","age":"7 лет","vacc":"","check":"","notes":""},{"id":"imuym6yrhsf5","owner":"alpa41no1","name":"Opera Noire","breed":"Лузитано","age":"8 лет","vacc":"","check":"","notes":""}],"appts":[]}</script>
 <script>
 const $=s=>document.querySelector(s);
-let D=JSON.parse($('#data').textContent),art=null,canEdit=false,editing=null,draft=null,err='',dirty=false;
-const SINGLE=D.single||null;
+let V=null,P=null,err='',msg='',editing=null;
 const ss={get(k){try{return sessionStorage.getItem(k)}catch(e){return null}},set(k,v){try{v==null?sessionStorage.removeItem(k):sessionStorage.setItem(k,v)}catch(e){}}};
 const H=(t,a,...k)=>{const e=document.createElement(t);for(const[n,v]of Object.entries(a||{})){if(n==='class')e.className=v;else if(n.startsWith('on'))e.addEventListener(n.slice(2),v);else if(v!=null&&v!==false)e.setAttribute(n,v)}for(const c of k.flat())if(c!=null&&c!==false)e.append(c);return e};
 const F=(l,el)=>H('label',{class:'f'},H('span',{},l),el);
 const key=n=>n.trim().toLowerCase();
 const days=d=>d?Math.floor((Date.now()-new Date(d))/864e5):null;
 const fmt=(d,t)=>d?new Date(d).toLocaleString('ru-RU',t?{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}:{day:'numeric',month:'long',year:'numeric'}):'—';
-async function hash(n,p){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(key(n)+':'+p.trim()));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
 const uid=()=>'i'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+//C1
+const enc=new TextEncoder(),dec=new TextDecoder();
+const b64=u=>{let s='';u.forEach(x=>s+=String.fromCharCode(x));return btoa(s)};
+const unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function kdf(secret,salt){const m=await crypto.subtle.importKey('raw',enc.encode(secret),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt:enc.encode(salt),iterations:150000,hash:'SHA-256'},m,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
+async function seal(obj,secret,salt){const iv=crypto.getRandomValues(new Uint8Array(12)),k=await kdf(secret,salt);return b64(iv)+'.'+b64(new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},k,enc.encode(JSON.stringify(obj)))))}
+async function unseal(blob,secret,salt){const[i,c]=blob.split('.'),k=await kdf(secret,salt);return JSON.parse(dec.decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(i)},k,unb64(c))))}
+async function pid(nick){const h=await crypto.subtle.digest('SHA-256',enc.encode('id:'+key(nick)));return[...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,20)}
+//C2
+function gcfg(){let s={};try{s=JSON.parse(localStorage.getItem('gh')||'{}')}catch(e){}
+ const h=location.hostname,p=location.pathname.split('/').filter(Boolean);
+ return{o:s.o||(h.endsWith('github.io')?h.split('.')[0]:''),r:s.r||(p[0]&&!p[0].includes('.')||p[0]&&p[0].endsWith('.github.io')?p[0]:''),t:s.t||''}}
+const gurl=g=>`https://api.github.com/repos/${g.o}/${g.r}/contents/data.json`;
+const ghh=g=>({Authorization:'Bearer '+g.t,Accept:'application/vnd.github+json'});
+async function ghGet(){const g=gcfg(),r=await fetch(gurl(g)+'?t='+Date.now(),{headers:ghh(g),cache:'no-store'});
+ if(r.status===404)return null;if(r.status===401||r.status===403)throw new Error('Токен не подошёл или у него нет доступа к этому репозиторию');if(!r.ok)throw new Error('GitHub вернул ошибку '+r.status);
+ const j=await r.json();return{sha:j.sha,data:JSON.parse(atob(j.content.replace(/\n/g,'')))}}
+async function ghPut(obj,sha){const g=gcfg(),b={message:'Обновление картотеки',content:btoa(JSON.stringify(obj))};if(sha)b.sha=sha;
+ const r=await fetch(gurl(g),{method:'PUT',headers:{...ghh(g),'Content-Type':'application/json'},body:JSON.stringify(b)});
+ if(r.status===409||r.status===422)throw new Error('Данные уже изменил кто-то другой. Выйдите и войдите заново.');
+ if(r.status===401||r.status===403)throw new Error('У токена нет права записи (нужно Contents: Read and write)');
+ if(r.status===404)throw new Error('Репозиторий не найден. Проверьте название и токен.');
+ if(!r.ok)throw new Error('GitHub вернул ошибку '+r.status);return(await r.json()).content.sha}
+async function save(ok){err='';msg='';
+ try{const W=V.W,out={v:1,vet:await seal(W,V.pw,'vet'),owners:{}};
+  for(const o of W.owners)out.owners[await pid(o.nick)]=await seal({nick:o.nick,horses:W.horses.filter(h=>h.owner===o.key),appts:W.appts.filter(a=>a.owner===o.key)},o.pin,key(o.nick));
+  V.sha=await ghPut(out,V.sha);msg=(ok||'Сохранено')+'. Сайт обновится для игроков в течение пары минут.'}catch(e){err='Не удалось сохранить: '+e.message}render()}
+const del=fn=>{const b=H('button',{class:'danger',onclick:()=>{if(b.dataset.a)return fn();b.dataset.a=1;b.textContent='Точно удалить?';setTimeout(()=>{delete b.dataset.a;b.textContent='Удалить'},3000)}},'Удалить');return b};
+const back=()=>H('button',{class:'ghost',onclick:()=>{ss.set('role',null);V=null;P=null;err='';msg='';render()}},'← На главную');
 function recs(h){const r=[],v=days(h.vacc),c=days(h.check);
  r.push(v==null?['bad','Нет данных о прививке — запишитесь на вакцинацию']:v>365?['bad','Прививка просрочена — пора на вакцинацию']:v>300?['soon','Скоро пора на прививку']:['ok','Прививка действует']);
  r.push(c==null?['soon','Осмотр ещё не проводился']:c>180?['bad','Давно не было осмотра — пора записаться']:c>150?['soon','Скоро плановый осмотр']:['ok','Осмотр проходил недавно']);return r}
 const worst=r=>r.some(x=>x[0]==='bad')?'bad':r.some(x=>x[0]==='soon')?'soon':'ok';
-function doc(data,title){const c=document.documentElement.cloneNode(true);c.querySelector('#app').replaceChildren();
- c.querySelector('#data').textContent=JSON.stringify(data).replace(/</g,'\\u003c');if(title)c.querySelector('title').textContent=title;return'<!DOCTYPE html>\n'+c.outerHTML}
-function personal(o){return doc({single:o.key,owners:[{nick:o.nick,key:o.key,hash:''}],horses:D.horses.filter(h=>h.owner===o.key),appts:D.appts.filter(a=>a.owner===o.key)},'Вет клиника — '+o.nick)}
-async function dl(name,text){
- try{const d=window.claude&&await window.claude.use('downloads');if(d){await d.save({filename:name,data:text});return}}catch(e){if(e&&e.code==='declined')return}
- const a=H('a',{href:URL.createObjectURL(new Blob([text],{type:'text/html'})),download:name});document.body.append(a);a.click();a.remove()}
-const live=()=>art&&canEdit;
-async function save(){dirty=true;if(live()){try{await art.publish(doc(D))}catch(e){err='Не удалось сохранить: '+(e.code||e.message)}}render()}
-const del=fn=>{const b=H('button',{class:'danger',onclick:()=>{if(b.dataset.a)return fn();b.dataset.a=1;b.textContent='Точно удалить?';setTimeout(()=>{delete b.dataset.a;b.textContent='Удалить'},3000)}},'Удалить');return b};
-const back=()=>H('button',{class:'ghost',onclick:()=>{ss.set('role',null);ss.set('vetok',null);render()}},'← На главную');
-
 function card(h){const r=recs(h);return H('div',{class:'card '+worst(r)},
  H('h3',{},h.name),H('div',{class:'meta'},[h.breed,h.age].filter(Boolean).join(', ')),
  H('div',{class:'meta'},'Последняя прививка: '+fmt(h.vacc)+'. Последний осмотр: '+fmt(h.check)+'.'),
  r.map(x=>H('div',{class:'rec '+x[0]},H('i'),x[1])),
  h.notes&&H('div',{class:'note'},H('b',{},'Назначение ветеринара: '),h.notes))}
-
-function playerView(){const k=ss.get('who'),o=D.owners.find(x=>x.key===k);
- if(!o)return loginView();
- const hs=D.horses.filter(h=>h.owner===k),ap=D.appts.filter(a=>a.owner===k).sort((a,b)=>a.when<b.when?-1:1);
- return H('div',{},
-  H('div',{class:'bar'},H('h2',{},'Лошади игрока '+o.nick),!SINGLE&&H('button',{class:'ghost',onclick:()=>{ss.set('who',null);ss.set('role',null);render()}},'Выйти')),
+function playerView(){const hs=P.horses,ap=[...P.appts].sort((a,b)=>a.when<b.when?-1:1);
+ return H('div',{},H('div',{class:'bar'},H('h2',{},'Лошади игрока '+P.nick),H('button',{class:'ghost',onclick:()=>{P=null;ss.set('role',null);render()}},'Выйти')),
   hs.length?hs.map(card):H('p',{class:'empty'},'У вас пока нет лошадей в картотеке. Загляните в клинику — ветеринар внесёт их после первого осмотра.'),
   H('h2',{},'Записи к ветеринару'),
-  ap.length?ap.map(a=>H('div',{class:'card ok'},H('b',{},fmt(a.when,1)),H('div',{class:'meta'},(D.horses.find(h=>h.id===a.horse)||{}).name||'Лошадь'),a.note&&H('div',{},a.note))):H('p',{class:'empty'},'Подтверждённых записей нет.'),
-  hs.length&&bookForm(o,hs))}
-
+  ap.length?ap.map(a=>H('div',{class:'card ok'},H('b',{},fmt(a.when,1)),H('div',{class:'meta'},(hs.find(h=>h.id===a.horse)||{}).name||'Лошадь'),a.note&&H('div',{},a.note))):H('p',{class:'empty'},'Подтверждённых записей нет.'),
+  hs.length&&bookForm(P,hs))}
 function bookForm(o,hs){const out=H('div'),sel=H('select',{},hs.map(h=>H('option',{value:h.id},h.name))),dt=H('input',{type:'datetime-local'}),cm=H('textarea',{placeholder:'Что беспокоит лошадь, или «плановый осмотр»'});
  return H('div',{class:'card'},H('h3',{},'Записаться на осмотр'),H('div',{class:'meta'},'Выберите удобное время. Ветеринар подтвердит запись и добавит её сюда.'),
   F('Лошадь',sel),F('Желаемые дата и время',dt),F('Комментарий',cm),
@@ -93,58 +103,57 @@ function bookForm(o,hs){const out=H('div'),sel=H('select',{},hs.map(h=>H('option
    const t='Запись к ветеринару\nИгрок: '+o.nick+'\nЛошадь: '+sel.selectedOptions[0].textContent+'\nКогда: '+fmt(dt.value,1)+(cm.value.trim()?'\nКомментарий: '+cm.value.trim():'');
    const cp=H('button',{class:'ghost',onclick:async()=>{try{await navigator.clipboard.writeText(t);cp.textContent='Скопировано'}catch(e){cp.textContent='Выделите текст и скопируйте вручную'}}},'Скопировать');
    out.replaceChildren(H('div',{class:'msg'},t),cp,H('p',{class:'small'},'Отправьте этот текст ветеринару в чат сервера или Discord.'))}},'Составить заявку'),out)}
-
-function loginView(){const n=H('input',{autocomplete:'off',placeholder:'Ваш ник в майнкрафте'}),p=H('input',{type:'password',placeholder:'PIN-код от ветеринара',inputmode:'numeric'}),e=H('div');
- const go=async()=>{const o=D.owners.find(x=>x.key===key(n.value));
-  if(o&&o.hash&&o.hash===await hash(n.value,p.value)){ss.set('who',o.key);render()}else e.replaceChildren(H('div',{class:'err'},'Ник или PIN не подошли. PIN выдаёт ветеринар в клинике.'))};
+function loginView(){const n=H('input',{autocomplete:'off',placeholder:'Ваш ник в майнкрафте'}),p=H('input',{type:'password',placeholder:'PIN-код от ветеринара'}),e=H('div');
+ const go=async()=>{if(!n.value.trim()||!p.value.trim())return;e.textContent='Проверяю…';let j;
+  try{const r=await fetch('data.json?t='+Date.now(),{cache:'no-store'});if(!r.ok)throw 0;j=await r.json()}catch(x){e.replaceChildren(H('div',{class:'err'},'Не удалось загрузить данные клиники. Попробуйте позже.'));return}
+  try{const b=j.owners&&j.owners[await pid(n.value)];if(!b)throw 0;P=await unseal(b,p.value.trim(),key(n.value));render()}catch(x){e.replaceChildren(H('div',{class:'err'},'Ник или PIN не подошли. PIN выдаёт ветеринар в клинике.'))}};
  p.addEventListener('keydown',ev=>{if(ev.key==='Enter')go()});
  return H('div',{class:'card'},H('h2',{style:'margin-top:0'},'Вход для участников'),F('Ник',n),F('PIN-код',p),H('div',{class:'bar'},H('button',{onclick:go},'Показать моих лошадей'),back()),e)}
-
-function vetLogin(){const setup=!D.vetHash,p=H('input',{type:'password',placeholder:setup?'Придумайте пароль (от 4 символов)':'Пароль ветеринара'}),e=H('div');
- const go=async()=>{if(setup){if(p.value.trim().length<4){e.replaceChildren(H('div',{class:'err'},'Пароль слишком короткий'));return}D.vetHash=await hash('vet',p.value);ss.set('vetok','1');await save()}
-  else if(D.vetHash===await hash('vet',p.value)){ss.set('vetok','1');render()}else e.replaceChildren(H('div',{class:'err'},'Пароль не подошёл.'))};
- p.addEventListener('keydown',ev=>{if(ev.key==='Enter')go()});
- return H('div',{class:'card'},H('h2',{style:'margin-top:0'},setup?'Первый вход ветеринара':'Вход для ветеринаров'),setup&&H('p',{class:'meta'},'Пароля ещё нет. Придумайте его, он понадобится при каждом входе.'),F('Пароль',p),H('div',{class:'bar'},H('button',{onclick:go},setup?'Создать пароль и войти':'Войти'),back()),e)}
-
-function vetView(){
- const nk=H('input',{placeholder:'Ник игрока'}),np=H('input',{placeholder:'PIN, например 4821'}),vp=H('input',{type:'password',placeholder:'Новый пароль ветеринара'});
- const E=editing&&D.horses.find(h=>h.id===editing),d=draft||E||{};
- const ow=H('select',{},D.owners.map(o=>H('option',{value:o.key,selected:o.key===d.owner},o.nick)));
+function vetLogin(){const g=gcfg(),pw=H('input',{type:'password',placeholder:'Пароль ветеринара'}),rp=H('input',{value:g.o&&g.r?g.o+'/'+g.r:'',placeholder:'владелец/репозиторий'}),tk=H('input',{type:'password',placeholder:g.t?'Токен сохранён в этом браузере':'Токен GitHub'}),e=H('div');
+ const go=async()=>{const[o,r]=rp.value.trim().split('/'),t=tk.value.trim()||g.t;
+  if(!o||!r||!t||!pw.value){e.replaceChildren(H('div',{class:'err'},'Заполните пароль, репозиторий и токен'));return}
+  try{localStorage.setItem('gh',JSON.stringify({o,r,t}))}catch(x){}
+  e.textContent='Проверяю…';
+  try{const cur=await ghGet();
+   if(!cur||!cur.data.vet){if(pw.value.length<6){e.replaceChildren(H('div',{class:'err'},'Пароль должен быть не короче 6 символов'));return}
+    V={W:{owners:[],horses:[],appts:[]},sha:cur&&cur.sha,pw:pw.value};await save('Пароль создан и данные сохранены. Запомните пароль: без него данные не восстановить')}
+   else{try{V={W:await unseal(cur.data.vet,pw.value,'vet'),sha:cur.sha,pw:pw.value};err='';msg='';render()}catch(x){e.replaceChildren(H('div',{class:'err'},'Пароль не подошёл.'))}}
+  }catch(x){e.replaceChildren(H('div',{class:'err'},x.message))}};
+ pw.addEventListener('keydown',ev=>{if(ev.key==='Enter')go()});
+ return H('div',{class:'card'},H('h2',{style:'margin-top:0'},'Вход для ветеринаров'),F('Пароль ветеринара (при первом входе придумайте его)',pw),F('Репозиторий GitHub',rp),!g.t&&F('Токен GitHub',tk),H('div',{class:'bar'},H('button',{onclick:go},'Войти'),back()),e)}
+function vetView(){const W=V.W;
+ const nk=H('input',{placeholder:'Ник игрока'}),np=H('input',{placeholder:'PIN, от 6 символов'}),vp=H('input',{type:'password',placeholder:'Новый пароль ветеринара'});
+ const E=editing&&W.horses.find(h=>h.id===editing),d=E||{};
+ const ow=H('select',{},W.owners.map(o=>H('option',{value:o.key,selected:o.key===d.owner},o.nick)));
  const f={name:H('input',{value:d.name||''}),breed:H('input',{value:d.breed||'',placeholder:'Порода'}),age:H('input',{value:d.age||'',placeholder:'Возраст'}),vacc:H('input',{type:'date',value:d.vacc||''}),check:H('input',{type:'date',value:d.check||''}),notes:H('textarea',{},d.notes||'')};
- const ad=H('input',{type:'datetime-local'}),ao=H('select',{},D.owners.map(o=>H('option',{value:o.key},o.nick))),ah=H('select'),an=H('input',{placeholder:'Заметка (необязательно)'});
- const fill=()=>ah.replaceChildren(...D.horses.filter(h=>h.owner===ao.value).map(h=>H('option',{value:h.id},h.name)));ao.addEventListener('change',fill);fill();
- const full=()=>dl('vet-clinic-vet.html',doc(D));
- return H('div',{},
-  H('div',{class:'bar'},H('h2',{style:'margin:0'},'Кабинет ветеринара'),back()),
-  dirty&&!live()&&H('div',{class:'warn'},H('span',{},'Изменения пока только на этом экране. Скачайте обновлённый файл, иначе они пропадут при закрытии вкладки.'),H('button',{onclick:full},'Скачать файл')),
+ const ad=H('input',{type:'datetime-local'}),ao=H('select',{},W.owners.map(o=>H('option',{value:o.key},o.nick))),ah=H('select'),an=H('input',{placeholder:'Заметка (необязательно)'});
+ const fill=()=>ah.replaceChildren(...W.horses.filter(h=>h.owner===ao.value).map(h=>H('option',{value:h.id},h.name)));ao.addEventListener('change',fill);fill();
+ const nm=k=>(W.owners.find(o=>o.key===k)||{}).nick||'?';
+ return H('div',{},H('div',{class:'bar'},H('h2',{style:'margin:0'},'Кабинет ветеринара'),back()),
   H('h2',{},'Игроки'),
-  D.owners.length?D.owners.map(o=>H('div',{class:'card bar'},H('span',{},o.nick+' · лошадей: '+D.horses.filter(h=>h.owner===o.key).length),H('span',{},H('button',{class:'ghost',onclick:()=>dl('vet-clinic-'+o.key.replace(/[^a-z0-9_-]/g,'_')+'.html',personal(o))},'Страница игрока'),' ',del(()=>{D.owners=D.owners.filter(x=>x!==o);D.horses=D.horses.filter(h=>h.owner!==o.key);D.appts=D.appts.filter(a=>a.owner!==o.key);save()})))):H('p',{class:'empty'},'Игроков пока нет.'),
-  H('div',{class:'card'},H('div',{class:'meta'},'Новый игрок или смена PIN у существующего'),H('div',{class:'row'},F('Ник',nk),F('PIN',np)),
-   H('button',{onclick:async()=>{if(!nk.value.trim()||!np.value.trim())return;const h=await hash(nk.value,np.value),k=key(nk.value),o=D.owners.find(x=>x.key===k);
-    if(o)o.hash=h;else D.owners.push({nick:nk.value.trim(),key:k,hash:h});save()}},'Сохранить игрока')),
+  W.owners.length?W.owners.map(o=>H('div',{class:'card bar'},H('span',{},o.nick+' · PIN: '+o.pin+' · лошадей: '+W.horses.filter(h=>h.owner===o.key).length),del(()=>{V.W.owners=W.owners.filter(x=>x!==o);W.horses=W.horses.filter(h=>h.owner!==o.key);W.appts=W.appts.filter(a=>a.owner!==o.key);save('Игрок удалён')}))):H('p',{class:'empty'},'Игроков пока нет.'),
+  H('div',{class:'card'},H('div',{class:'meta'},'Новый игрок или смена PIN. PIN не короче 6 символов, лучше с буквами и цифрами.'),H('div',{class:'row'},F('Ник',nk),F('PIN',np)),
+   H('button',{onclick:()=>{const p=np.value.trim();if(!nk.value.trim())return;if(p.length<6){err='PIN должен быть не короче 6 символов';render();return}
+    const k=key(nk.value),o=W.owners.find(x=>x.key===k);if(o)o.pin=p;else W.owners.push({nick:nk.value.trim(),key:k,pin:p});save('Игрок сохранён')}},'Сохранить игрока')),
   H('h2',{},E?'Изменить лошадь':'Новая лошадь'),
-  H('div',{class:'card'},D.owners.length?[F('Владелец',ow),H('div',{class:'row'},F('Кличка',f.name),F('Порода',f.breed)),H('div',{class:'row'},F('Возраст',f.age),F('Последняя прививка',f.vacc)),F('Последний осмотр',f.check),F('Назначения и рекомендации',f.notes),
+  H('div',{class:'card'},W.owners.length?[F('Владелец',ow),H('div',{class:'row'},F('Кличка',f.name),F('Порода',f.breed)),H('div',{class:'row'},F('Возраст',f.age),F('Последняя прививка',f.vacc)),F('Последний осмотр',f.check),F('Назначения и рекомендации',f.notes),
    H('div',{class:'bar'},H('button',{onclick:()=>{if(!f.name.value.trim())return;const o={id:E?E.id:uid(),owner:ow.value};for(const k in f)o[k]=f[k].value.trim();
-    if(E)Object.assign(E,o);else D.horses.push(o);editing=null;draft=null;save()}},E?'Сохранить изменения':'Добавить лошадь'),E&&H('button',{class:'ghost',onclick:()=>{editing=null;render()}},'Отмена'))]:H('p',{class:'empty'},'Сначала добавьте игрока.')),
+    if(E)Object.assign(E,o);else W.horses.push(o);editing=null;save('Лошадь сохранена')}},E?'Сохранить изменения':'Добавить лошадь'),E&&H('button',{class:'ghost',onclick:()=>{editing=null;render()}},'Отмена'))]:H('p',{class:'empty'},'Сначала добавьте игрока.')),
   H('h2',{},'Лошади'),
-  D.horses.map(h=>H('div',{class:'card bar'},H('span',{},h.name+' — '+((D.owners.find(o=>o.key===h.owner)||{}).nick||'?')),H('span',{},H('button',{class:'ghost',onclick:()=>{editing=h.id;render();scrollTo(0,0)}},'Изменить'),' ',del(()=>{D.horses=D.horses.filter(x=>x!==h);D.appts=D.appts.filter(a=>a.horse!==h.id);save()})))),
+  W.horses.map(h=>H('div',{class:'card bar'},H('span',{},h.name+' — '+nm(h.owner)),H('span',{},H('button',{class:'ghost',onclick:()=>{editing=h.id;render();scrollTo(0,0)}},'Изменить'),' ',del(()=>{W.horses=W.horses.filter(x=>x!==h);W.appts=W.appts.filter(a=>a.horse!==h.id);save('Лошадь удалена')})))),
   H('h2',{},'Записи'),
-  D.appts.sort((a,b)=>a.when<b.when?-1:1).map(a=>H('div',{class:'card bar'},H('span',{},fmt(a.when,1)+' · '+((D.owners.find(o=>o.key===a.owner)||{}).nick||'?')+' · '+((D.horses.find(h=>h.id===a.horse)||{}).name||'?')+(a.note?' · '+a.note:'')),del(()=>{D.appts=D.appts.filter(x=>x!==a);save()}))),
+  [...W.appts].sort((a,b)=>a.when<b.when?-1:1).map(a=>H('div',{class:'card bar'},H('span',{},fmt(a.when,1)+' · '+nm(a.owner)+' · '+((W.horses.find(h=>h.id===a.horse)||{}).name||'?')+(a.note?' · '+a.note:'')),del(()=>{W.appts=W.appts.filter(x=>x!==a);save('Запись удалена')}))),
   H('div',{class:'card'},H('div',{class:'meta'},'Подтвердить запись'),H('div',{class:'row'},F('Игрок',ao),F('Лошадь',ah)),F('Дата и время',ad),F('Заметка',an),
-   H('button',{onclick:()=>{if(!ad.value||!ah.value)return;D.appts.push({id:uid(),owner:ao.value,horse:ah.value,when:ad.value,note:an.value.trim()});save()}},'Добавить запись')),
-  H('h2',{},'Файл и пароль'),
-  H('div',{class:'card'},H('div',{class:'meta'},'Полный файл со всеми данными и входом ветеринара. Не отправляйте его игрокам, им отправляйте «Страницу игрока».'),H('button',{class:'ghost',onclick:full},'Скачать полный файл'),
-   H('div',{class:'row',style:'margin-top:12px'},F('Сменить пароль ветеринара',vp),H('div',{style:'align-self:end;margin-bottom:10px'},H('button',{class:'ghost',onclick:async()=>{if(vp.value.trim().length<4)return;D.vetHash=await hash('vet',vp.value);save()}},'Сохранить пароль')))))}
-
+   H('button',{onclick:()=>{if(!ad.value||!ah.value)return;W.appts.push({id:uid(),owner:ao.value,horse:ah.value,when:ad.value,note:an.value.trim()});save('Запись добавлена')}},'Добавить запись')),
+  H('h2',{},'Настройки'),
+  H('div',{class:'card'},H('div',{class:'row'},F('Сменить пароль ветеринара',vp),H('div',{style:'align-self:end;margin-bottom:10px'},H('button',{class:'ghost',onclick:()=>{if(vp.value.length<6){err='Пароль должен быть не короче 6 символов';render();return}V.pw=vp.value;save('Пароль изменён')}},'Сохранить пароль'))),
+   H('button',{class:'ghost',onclick:()=>{try{localStorage.removeItem('gh')}catch(e){}V=null;ss.set('role',null);render()}},'Выйти и забыть токен в этом браузере')))}
 function landing(){const b=(role,t,s)=>H('button',{class:'big',onclick:()=>{ss.set('role',role);render()}},H('b',{},t),H('span',{},s));
- return H('div',{class:'pick'},b('player','Я участник','Посмотреть моих лошадей и записаться к ветеринару'),b('vet','Я ветеринар','Картотека, записи и страницы игроков'))}
-
+ return H('div',{class:'pick'},b('player','Я участник','Посмотреть моих лошадей и записаться к ветеринару'),b('vet','Я ветеринар','Картотека и записи клиники'))}
 function render(){const a=$('#app');a.replaceChildren();
- if(err)a.append(H('div',{class:'err'},err));
- if(SINGLE){ss.set('who',SINGLE);a.append(playerView());return}
+ if(err)a.append(H('div',{class:'err'},err));if(msg)a.append(H('div',{class:'warn'},msg));
  const r=ss.get('role');
- a.append(r==='vet'?(ss.get('vetok')?vetView():vetLogin()):r==='player'?playerView():landing())}
+ a.append(r==='vet'?(V?vetView():vetLogin()):r==='player'?(P?playerView():loginView()):landing())}
 render();
-(async()=>{try{const c=window.claude;if(!c)return;art=await c.use('artifact');const u=await c.use('user');canEdit=!!(art&&u&&u.canEdit());render()}catch(e){}})();
 </script>
 </body></html>
