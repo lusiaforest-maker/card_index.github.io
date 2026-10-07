@@ -44,7 +44,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 </main>
 <script>
 const $=s=>document.querySelector(s);
-let V=null,P=null,err='',msg='',editing=null;
+let V=null,P=null,err='',msg='',editing=null,tried=false;
 const ss={get(k){try{return sessionStorage.getItem(k)}catch(e){return null}},set(k,v){try{v==null?sessionStorage.removeItem(k):sessionStorage.setItem(k,v)}catch(e){}}};
 const H=(t,a,...k)=>{const e=document.createElement(t);for(const[n,v]of Object.entries(a||{})){if(n==='class')e.className=v;else if(n.startsWith('on'))e.addEventListener(n.slice(2),v);else if(v!=null&&v!==false)e.setAttribute(n,v)}for(const c of k.flat())if(c!=null&&c!==false)e.append(c);return e};
 const F=(l,el)=>H('label',{class:'f'},H('span',{},l),el);
@@ -56,11 +56,18 @@ const uid=()=>'i'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
 const enc=new TextEncoder(),dec=new TextDecoder();
 const b64=u=>{let s='';u.forEach(x=>s+=String.fromCharCode(x));return btoa(s)};
 const unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
-async function kdf(secret,salt){const m=await crypto.subtle.importKey('raw',enc.encode(secret),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt:enc.encode(salt),iterations:150000,hash:'SHA-256'},m,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
+async function kdf(secret,salt){if(secret instanceof CryptoKey)return secret;const m=await crypto.subtle.importKey('raw',enc.encode(secret),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt:enc.encode(salt),iterations:150000,hash:'SHA-256'},m,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
 async function seal(obj,secret,salt){const iv=crypto.getRandomValues(new Uint8Array(12)),k=await kdf(secret,salt);return b64(iv)+'.'+b64(new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},k,enc.encode(JSON.stringify(obj)))))}
 async function unseal(blob,secret,salt){const[i,c]=blob.split('.'),k=await kdf(secret,salt);return JSON.parse(dec.decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(i)},k,unb64(c))))}
 async function pid(nick){const h=await crypto.subtle.digest('SHA-256',enc.encode('id:'+key(nick)));return[...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,20)}
 //C2
+const idb=()=>new Promise((res,rej)=>{const r=indexedDB.open('vc',1);r.onupgradeneeded=()=>r.result.createObjectStore('k');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+async function idbGet(){try{const d=await idb();return await new Promise(res=>{const q=d.transaction('k').objectStore('k').get('vet');q.onsuccess=()=>res(q.result||null);q.onerror=()=>res(null)})}catch(e){return null}}
+async function idbSet(v){try{const d=await idb();await new Promise((res,rej)=>{const t=d.transaction('k','readwrite');v==null?t.objectStore('k').delete('vet'):t.objectStore('k').put(v,'vet');t.oncomplete=res;t.onerror=rej})}catch(e){}}
+async function autoVet(){tried=true;const k=await idbGet();if(!k||!gcfg().t){render();return}
+ let cur;try{cur=await ghGet()}catch(e){err=e.message;render();return}
+ if(!cur||!cur.data.vet){render();return}
+ try{V={W:await unseal(cur.data.vet,k,'vet'),sha:cur.sha,pw:k}}catch(e){await idbSet(null)}render()}
 function gcfg(){let s={};try{s=JSON.parse(localStorage.getItem('gh')||'{}')}catch(e){}
  const h=location.hostname,p=location.pathname.split('/').filter(Boolean);
  return{o:s.o||(h.endsWith('github.io')?h.split('.')[0]:''),r:s.r||(p[0]&&!p[0].includes('.')||p[0]&&p[0].endsWith('.github.io')?p[0]:''),t:s.t||''}}
@@ -80,7 +87,7 @@ async function save(ok){err='';msg='';
   for(const o of W.owners)out.owners[await pid(o.nick)]=await seal({nick:o.nick,horses:W.horses.filter(h=>h.owner===o.key),appts:W.appts.filter(a=>a.owner===o.key)},o.pin,key(o.nick));
   V.sha=await ghPut(out,V.sha);msg=(ok||'Сохранено')+'. Сайт обновится для игроков в течение пары минут.'}catch(e){err='Не удалось сохранить: '+e.message}render()}
 const del=fn=>{const b=H('button',{class:'danger',onclick:()=>{if(b.dataset.a)return fn();b.dataset.a=1;b.textContent='Точно удалить?';setTimeout(()=>{delete b.dataset.a;b.textContent='Удалить'},3000)}},'Удалить');return b};
-const back=()=>H('button',{class:'ghost',onclick:()=>{ss.set('role',null);V=null;P=null;err='';msg='';render()}},'← На главную');
+const back=()=>H('button',{class:'ghost',onclick:()=>{ss.set('role',null);V=null;P=null;tried=false;err='';msg='';render()}},'← На главную');
 function recs(h){const r=[],v=days(h.vacc),c=days(h.check);
  r.push(v==null?['bad','Нет данных о прививке — запишитесь на вакцинацию']:v>365?['bad','Прививка просрочена — пора на вакцинацию']:v>300?['soon','Скоро пора на прививку']:['ok','Прививка действует']);
  r.push(c==null?['soon','Осмотр ещё не проводился']:c>180?['bad','Давно не было осмотра — пора записаться']:c>150?['soon','Скоро плановый осмотр']:['ok','Осмотр проходил недавно']);return r}
@@ -109,18 +116,18 @@ function loginView(){const n=H('input',{autocomplete:'off',placeholder:'Ваш �
   try{const b=j.owners&&j.owners[await pid(n.value)];if(!b)throw 0;P=await unseal(b,p.value.trim(),key(n.value));render()}catch(x){e.replaceChildren(H('div',{class:'err'},'Ник или PIN не подошли. PIN выдаёт ветеринар в клинике.'))}};
  p.addEventListener('keydown',ev=>{if(ev.key==='Enter')go()});
  return H('div',{class:'card'},H('h2',{style:'margin-top:0'},'Вход для участников'),F('Ник',n),F('PIN-код',p),H('div',{class:'bar'},H('button',{onclick:go},'Показать моих лошадей'),back()),e)}
-function vetLogin(){const g=gcfg(),pw=H('input',{type:'password',placeholder:'Пароль ветеринара'}),rp=H('input',{value:g.o&&g.r?g.o+'/'+g.r:'',placeholder:'владелец/репозиторий'}),tk=H('input',{type:'password',placeholder:g.t?'Токен сохранён в этом браузере':'Токен GitHub'}),e=H('div');
+function vetLogin(){const g=gcfg(),pw=H('input',{type:'password',placeholder:'Пароль ветеринара'}),rp=H('input',{value:g.o&&g.r?g.o+'/'+g.r:'',placeholder:'владелец/репозиторий'}),tk=H('input',{type:'password',placeholder:g.t?'Токен сохранён в этом браузере':'Токен GitHub'}),e=H('div'),rm=H('input',{type:'checkbox',style:'width:auto'});
  const go=async()=>{const[o,r]=rp.value.trim().split('/'),t=tk.value.trim()||g.t;
   if(!o||!r||!t||!pw.value){e.replaceChildren(H('div',{class:'err'},'Заполните пароль, репозиторий и токен'));return}
   try{localStorage.setItem('gh',JSON.stringify({o,r,t}))}catch(x){}
   e.textContent='Проверяю…';
   try{const cur=await ghGet();
    if(!cur||!cur.data.vet){if(pw.value.length<6){e.replaceChildren(H('div',{class:'err'},'Пароль должен быть не короче 6 символов'));return}
-    V={W:{owners:[],horses:[],appts:[]},sha:cur&&cur.sha,pw:pw.value};await save('Пароль создан и данные сохранены. Запомните пароль: без него данные не восстановить')}
-   else{try{V={W:await unseal(cur.data.vet,pw.value,'vet'),sha:cur.sha,pw:pw.value};err='';msg='';render()}catch(x){e.replaceChildren(H('div',{class:'err'},'Пароль не подошёл.'))}}
+    if(rm.checked)await idbSet(await kdf(pw.value,'vet'));V={W:{owners:[],horses:[],appts:[]},sha:cur&&cur.sha,pw:pw.value};await save('Пароль создан и данные сохранены. Запомните пароль: без него данные не восстановить')}
+   else{try{V={W:await unseal(cur.data.vet,pw.value,'vet'),sha:cur.sha,pw:pw.value};if(rm.checked)await idbSet(await kdf(pw.value,'vet'));err='';msg='';render()}catch(x){e.replaceChildren(H('div',{class:'err'},'Пароль не подошёл.'))}}
   }catch(x){e.replaceChildren(H('div',{class:'err'},x.message))}};
  pw.addEventListener('keydown',ev=>{if(ev.key==='Enter')go()});
- return H('div',{class:'card'},H('h2',{style:'margin-top:0'},'Вход для ветеринаров'),F('Пароль ветеринара (при первом входе придумайте его)',pw),F('Репозиторий GitHub',rp),!g.t&&F('Токен GitHub',tk),H('div',{class:'bar'},H('button',{onclick:go},'Войти'),back()),e)}
+ return H('div',{class:'card'},H('h2',{style:'margin-top:0'},'Вход для ветеринаров'),F('Пароль ветеринара (при первом входе придумайте его)',pw),F('Репозиторий GitHub',rp),!g.t&&F('Токен GitHub',tk),H('label',{class:'f',style:'display:flex;gap:8px;align-items:center'},rm,H('span',{style:'display:inline;margin:0;font-size:15px;color:var(--ink)'},'Запомнить меня на этом устройстве')),H('div',{class:'small',style:'margin:-4px 0 12px'},'Включайте только на своём личном компьютере.'),H('div',{class:'bar'},H('button',{onclick:go},'Войти'),back()),e)}
 function vetView(){const W=V.W;
  const nk=H('input',{placeholder:'Ник игрока'}),np=H('input',{placeholder:'PIN, от 6 символов'}),vp=H('input',{type:'password',placeholder:'Новый пароль ветеринара'});
  const E=editing&&W.horses.find(h=>h.id===editing),d=E||{};
@@ -146,13 +153,14 @@ function vetView(){const W=V.W;
   H('div',{class:'card'},H('div',{class:'meta'},'Подтвердить запись'),H('div',{class:'row'},F('Игрок',ao),F('Лошадь',ah)),F('Дата и время',ad),F('Заметка',an),
    H('button',{onclick:()=>{if(!ad.value||!ah.value)return;W.appts.push({id:uid(),owner:ao.value,horse:ah.value,when:ad.value,note:an.value.trim()});save('Запись добавлена')}},'Добавить запись')),
   H('h2',{},'Настройки'),
-  H('div',{class:'card'},H('div',{class:'row'},F('Сменить пароль ветеринара',vp),H('div',{style:'align-self:end;margin-bottom:10px'},H('button',{class:'ghost',onclick:()=>{if(vp.value.length<6){err='Пароль должен быть не короче 6 символов';render();return}V.pw=vp.value;save('Пароль изменён')}},'Сохранить пароль'))),
-   H('button',{class:'ghost',onclick:()=>{try{localStorage.removeItem('gh')}catch(e){}V=null;ss.set('role',null);render()}},'Выйти и забыть токен в этом браузере')))}
+  H('div',{class:'card'},H('div',{class:'row'},F('Сменить пароль ветеринара',vp),H('div',{style:'align-self:end;margin-bottom:10px'},H('button',{class:'ghost',onclick:async()=>{if(vp.value.length<6){err='Пароль должен быть не короче 6 символов';render();return}V.pw=vp.value;if(await idbGet())await idbSet(await kdf(vp.value,'vet'));save('Пароль изменён')}},'Сохранить пароль'))),
+   H('button',{class:'ghost',onclick:async()=>{try{localStorage.removeItem('gh')}catch(e){}await idbSet(null);V=null;ss.set('role',null);render()}},'Забыть меня на этом устройстве (удалит токен и вход)')))}
 function landing(){const b=(role,t,s)=>H('button',{class:'big',onclick:()=>{ss.set('role',role);render()}},H('b',{},t),H('span',{},s));
  return H('div',{class:'pick'},b('player','Я участник','Посмотреть моих лошадей и записаться к ветеринару'),b('vet','Я ветеринар','Картотека и записи клиники'))}
 function render(){const a=$('#app');a.replaceChildren();
  if(err)a.append(H('div',{class:'err'},err));if(msg)a.append(H('div',{class:'warn'},msg));
  const r=ss.get('role');
+ if(r==='vet'&&!V&&!tried){a.append(H('p',{class:'meta'},'Входим…'));autoVet();return}
  a.append(r==='vet'?(V?vetView():vetLogin()):r==='player'?(P?playerView():loginView()):landing())}
 render();
 </script>
