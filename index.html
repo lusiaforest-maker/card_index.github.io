@@ -113,14 +113,14 @@ function recs(h){const r=[],v=days(h.vacc),c=days(h.check);
  r.push(v==null?['bad','Нет данных о прививке — запишитесь на вакцинацию']:v>365?['bad','Прививка просрочена — пора на вакцинацию']:v>300?['soon','Скоро пора на прививку']:['ok','Прививка действует']);
  r.push(c==null?['soon','Осмотр ещё не проводился']:c>180?['bad','Давно не было осмотра — пора записаться']:c>150?['soon','Скоро плановый осмотр']:['ok','Осмотр проходил недавно']);return r}
 const worst=r=>r.some(x=>x[0]==='bad')?'bad':r.some(x=>x[0]==='soon')?'soon':'ok';
-function card(h){const r=recs(h);return H('div',{class:'card '+worst(r)},
- H('h3',{},h.name),H('div',{class:'meta'},[h.breed,h.age].filter(Boolean).join(', ')),
+function card(h,api,flat){const r=recs(h);return H('div',{class:'card '+worst(r),style:flat?'border:0;padding:0;margin:8px 0 12px':null},
+ !flat&&H('h3',{},h.name),H('div',{class:'meta'},[h.breed,h.age].filter(Boolean).join(', ')),
  H('div',{class:'meta'},'Последняя прививка: '+fmt(h.vacc)+'. Последний осмотр: '+fmt(h.check)+'.'),
  r.map(x=>H('div',{class:'rec '+x[0]},H('i'),x[1])),
- h.notes&&H('div',{class:'note'},H('b',{},'Назначение ветеринара: '),h.notes),h.pass&&passBlock(h,false))}
+ h.notes&&H('div',{class:'note'},H('b',{},'Назначение ветеринара: '),h.notes),h.pass&&passBlock(h,!!api))}
 function playerView(){const hs=P.horses,ap=[...P.appts].sort((a,b)=>a.when<b.when?-1:1);
  return H('div',{},H('div',{class:'bar'},H('h2',{},'Лошади игрока '+P.nick),H('button',{class:'ghost',onclick:()=>{P=null;ss.set('role',null);render()}},'Выйти')),
-  hs.length?hs.map(card):H('p',{class:'empty'},'У вас пока нет лошадей в картотеке. Загляните в клинику — ветеринар внесёт их после первого осмотра.'),
+  hs.length?hs.map(h=>card(h)):H('p',{class:'empty'},'У вас пока нет лошадей в картотеке. Загляните в клинику — ветеринар внесёт их после первого осмотра.'),
   H('h2',{},'Записи к ветеринару'),
   ap.length?ap.map(a=>H('div',{class:'card ok'},H('b',{},fmt(a.when,1)),H('div',{class:'meta'},(hs.find(h=>h.id===a.horse)||{}).name||'Лошадь'),a.note&&H('div',{},a.note))):H('p',{class:'empty'},'Подтверждённых записей нет.'),
   hs.length&&bookForm(P,hs))}
@@ -169,7 +169,7 @@ function vetView(){const W=V.W;
    H('div',{class:'bar'},sb=H('button',{onclick:async()=>{if(!f.name.value.trim())return;const o={id:E?E.id:uid(),owner:ow.value};for(const k in f)o[k]=f[k].value.trim();
     const fl=fi.files[0];let pass=E&&E.pass||null,old=null;try{if(rmp.checked&&pass){old=pass;pass=null}if(fl){sb.disabled=true;sb.textContent='Загружаю файл…';const pp=await prep(fl),sl=await sealFile(pp.bytes),id='p'+uid();await ghPutFile(id,sl.out);if(pass)old=pass;pass={id,k:sl.k,name:pp.name,type:pp.type}}}catch(e){err=e.message;render();return}if(pass)o.pass=pass;if(E){Object.assign(E,o);if(!pass)delete E.pass}else W.horses.push(o);editing=null;if(old)ghDelFile(old.id);save('Лошадь сохранена')}},E?'Сохранить изменения':'Добавить лошадь'),E&&H('button',{class:'ghost',onclick:()=>{editing=null;render()}},'Отмена'))]:H('p',{class:'empty'},'Сначала добавьте игрока.')),
   H('h2',{},'Лошади'),
-  W.horses.map(h=>H('div',{class:'card bar'},H('span',{},h.name+' — '+nm(h.owner)+(h.pass?' · паспорт есть':'')),H('span',{},H('button',{class:'ghost',onclick:()=>{editing=h.id;render();scrollTo(0,0)}},'Изменить'),' ',del(()=>{h.pass&&ghDelFile(h.pass.id);W.horses=W.horses.filter(x=>x!==h);W.appts=W.appts.filter(a=>a.horse!==h.id);save('Лошадь удалена')})))),
+  W.horses.map(h=>H('details',{class:'card'},H('summary',{style:'cursor:pointer;font-weight:700'},h.name+' — '+nm(h.owner)+(h.pass?' · паспорт есть':'')),H('div',{style:'margin-top:10px'},card(h,true,true),H('div',{class:'bar'},H('button',{class:'ghost',onclick:()=>{editing=h.id;render();scrollTo(0,0)}},'Изменить'),del(()=>{h.pass&&ghDelFile(h.pass.id);W.horses=W.horses.filter(x=>x!==h);W.appts=W.appts.filter(a=>a.horse!==h.id);save('Лошадь удалена')}))))),
   H('h2',{},'Записи'),
   [...W.appts].sort((a,b)=>a.when<b.when?-1:1).map(a=>H('div',{class:'card bar'},H('span',{},fmt(a.when,1)+' · '+nm(a.owner)+' · '+((W.horses.find(h=>h.id===a.horse)||{}).name||'?')+(a.note?' · '+a.note:'')),del(()=>{W.appts=W.appts.filter(x=>x!==a);save('Запись удалена')}))),
   H('div',{class:'card'},H('div',{class:'meta'},'Подтвердить запись'),H('div',{class:'row'},F('Игрок',ao),F('Лошадь',ah)),F('Дата и время',ad),F('Заметка',an),
