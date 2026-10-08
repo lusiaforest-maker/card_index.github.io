@@ -71,7 +71,7 @@ async function autoVet(){tried=true;const k=await idbGet();if(!k||!gcfg().t){ren
 function gcfg(){let s={};try{s=JSON.parse(localStorage.getItem('gh')||'{}')}catch(e){}
  const h=location.hostname,p=location.pathname.split('/').filter(Boolean);
  return{o:s.o||(h.endsWith('github.io')?h.split('.')[0]:''),r:s.r||(p[0]&&!p[0].includes('.')||p[0]&&p[0].endsWith('.github.io')?p[0]:''),t:s.t||''}}
-const gurl=g=>`https://api.github.com/repos/${g.o}/${g.r}/contents/data.json`;
+const gurl=(g,p='data.json')=>`https://api.github.com/repos/${g.o}/${g.r}/contents/${p}`;
 const ghh=g=>({Authorization:'Bearer '+g.t,Accept:'application/vnd.github+json'});
 async function ghGet(){const g=gcfg(),r=await fetch(gurl(g)+'?t='+Date.now(),{headers:ghh(g),cache:'no-store'});
  if(r.status===404)return null;if(r.status===401||r.status===403)throw new Error('Токен не подошёл или у него нет доступа к этому репозиторию');if(!r.ok)throw new Error('GitHub вернул ошибку '+r.status);
@@ -82,6 +82,27 @@ async function ghPut(obj,sha){const g=gcfg(),b={message:'Обновление к
  if(r.status===401||r.status===403)throw new Error('У токена нет права записи (нужно Contents: Read and write)');
  if(r.status===404)throw new Error('Репозиторий не найден. Проверьте название и токен.');
  if(!r.ok)throw new Error('GitHub вернул ошибку '+r.status);return(await r.json()).content.sha}
+async function prep(file){
+ if(file.type.startsWith('image/')){let bm;try{bm=await createImageBitmap(file)}catch(e){throw new Error('Не удалось прочитать фото. Сохраните его как JPG или PNG')}
+  const sc=Math.min(1,1600/Math.max(bm.width,bm.height)),c=document.createElement('canvas');c.width=Math.round(bm.width*sc);c.height=Math.round(bm.height*sc);c.getContext('2d').drawImage(bm,0,0,c.width,c.height);
+  const bl=await new Promise(r=>c.toBlob(r,'image/jpeg',.85));return{bytes:new Uint8Array(await bl.arrayBuffer()),type:'image/jpeg',name:file.name.replace(/\.[^.]+$/,'')+'.jpg'}}
+ if(file.type==='application/pdf'){if(file.size>5e6)throw new Error('PDF больше 5 МБ. Сожмите файл или загрузите фото');return{bytes:new Uint8Array(await file.arrayBuffer()),type:'application/pdf',name:file.name}}
+ throw new Error('Подходят только фото и PDF')}
+async function sealFile(bytes){const raw=crypto.getRandomValues(new Uint8Array(32)),k=await crypto.subtle.importKey('raw',raw,'AES-GCM',false,['encrypt']),iv=crypto.getRandomValues(new Uint8Array(12)),ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},k,bytes)),out=new Uint8Array(12+ct.length);out.set(iv);out.set(ct,12);return{out,k:b64(raw)}}
+async function openFile(buf,kb){const u=new Uint8Array(buf),k=await crypto.subtle.importKey('raw',unb64(kb),'AES-GCM',false,['decrypt']);return new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:u.slice(0,12)},k,u.slice(12)))}
+async function ghPutFile(id,bytes){const g=gcfg(),r=await fetch(gurl(g,'files/'+id+'.bin'),{method:'PUT',headers:{...ghh(g),'Content-Type':'application/json'},body:JSON.stringify({message:'Файл паспорта',content:b64(bytes)})});if(!r.ok)throw new Error('Не удалось загрузить файл ('+r.status+')')}
+async function ghDelFile(id){try{const g=gcfg(),u=gurl(g,'files/'+id+'.bin'),r=await fetch(u+'?t='+Date.now(),{headers:ghh(g)});if(!r.ok)return;const j=await r.json();await fetch(u,{method:'DELETE',headers:{...ghh(g),'Content-Type':'application/json'},body:JSON.stringify({message:'Удаление файла',sha:j.sha})})}catch(e){}}
+function passBlock(h,api){const p=h.pass,box=H('div',{class:'note'}),b=H('button',{class:'ghost',style:'margin-left:8px;padding:6px 12px'},'Открыть');
+ box.append(H('b',{},'Паспорт: '),p.name,b);
+ b.onclick=async()=>{b.disabled=true;b.textContent='Загружаю…';
+  try{const g=gcfg();let r;
+   if(api)r=await fetch(gurl(g,'files/'+p.id+'.bin')+'?t='+Date.now(),{headers:{...ghh(g),Accept:'application/vnd.github.raw'}});else r=await fetch('files/'+p.id+'.bin?t='+Date.now(),{cache:'no-store'});
+   if(r.status===404)throw new Error('Файл ещё загружается на сайт. Попробуйте через несколько минут.');if(!r.ok)throw new Error('Не удалось загрузить файл');
+   const url=URL.createObjectURL(new Blob([await openFile(await r.arrayBuffer(),p.k)],{type:p.type}));b.remove();
+   if(p.type.startsWith('image/'))box.append(H('img',{src:url,alt:p.name,style:'max-width:100%;border-radius:8px;margin-top:8px;display:block'}));
+   box.append(H('div',{style:'margin-top:8px'},H('a',{href:url,target:'_blank',rel:'noopener',style:'color:var(--green);font-weight:700'},p.type==='application/pdf'?'Открыть PDF':'Открыть в полном размере'),' · ',H('a',{href:url,download:p.name,style:'color:var(--green);font-weight:700'},'Скачать')))
+  }catch(e){b.disabled=false;b.textContent='Открыть';box.append(H('div',{class:'err'},e.message))}};
+ return box}
 async function save(ok){err='';msg='';
  try{const W=V.W,out={v:1,vet:await seal(W,V.pw,'vet'),owners:{}};
   for(const o of W.owners)out.owners[await pid(o.nick)]=await seal({nick:o.nick,horses:W.horses.filter(h=>h.owner===o.key),appts:W.appts.filter(a=>a.owner===o.key)},o.pin,key(o.nick));
@@ -96,7 +117,7 @@ function card(h){const r=recs(h);return H('div',{class:'card '+worst(r)},
  H('h3',{},h.name),H('div',{class:'meta'},[h.breed,h.age].filter(Boolean).join(', ')),
  H('div',{class:'meta'},'Последняя прививка: '+fmt(h.vacc)+'. Последний осмотр: '+fmt(h.check)+'.'),
  r.map(x=>H('div',{class:'rec '+x[0]},H('i'),x[1])),
- h.notes&&H('div',{class:'note'},H('b',{},'Назначение ветеринара: '),h.notes))}
+ h.notes&&H('div',{class:'note'},H('b',{},'Назначение ветеринара: '),h.notes),h.pass&&passBlock(h,false))}
 function playerView(){const hs=P.horses,ap=[...P.appts].sort((a,b)=>a.when<b.when?-1:1);
  return H('div',{},H('div',{class:'bar'},H('h2',{},'Лошади игрока '+P.nick),H('button',{class:'ghost',onclick:()=>{P=null;ss.set('role',null);render()}},'Выйти')),
   hs.length?hs.map(card):H('p',{class:'empty'},'У вас пока нет лошадей в картотеке. Загляните в клинику — ветеринар внесёт их после первого осмотра.'),
@@ -133,21 +154,22 @@ function vetView(){const W=V.W;
  const E=editing&&W.horses.find(h=>h.id===editing),d=E||{};
  const ow=H('select',{},W.owners.map(o=>H('option',{value:o.key,selected:o.key===d.owner},o.nick)));
  const f={name:H('input',{value:d.name||''}),breed:H('input',{value:d.breed||'',placeholder:'Порода'}),age:H('input',{value:d.age||'',placeholder:'Возраст'}),vacc:H('input',{type:'date',value:d.vacc||''}),check:H('input',{type:'date',value:d.check||''}),notes:H('textarea',{},d.notes||'')};
+ const fi=H('input',{type:'file',accept:'image/*,application/pdf'}),rmp=H('input',{type:'checkbox',style:'width:auto'});let sb;
  const ad=H('input',{type:'datetime-local'}),ao=H('select',{},W.owners.map(o=>H('option',{value:o.key},o.nick))),ah=H('select'),an=H('input',{placeholder:'Заметка (необязательно)'});
  const fill=()=>ah.replaceChildren(...W.horses.filter(h=>h.owner===ao.value).map(h=>H('option',{value:h.id},h.name)));ao.addEventListener('change',fill);fill();
  const nm=k=>(W.owners.find(o=>o.key===k)||{}).nick||'?';
  return H('div',{},H('div',{class:'bar'},H('h2',{style:'margin:0'},'Кабинет ветеринара'),back()),
   H('h2',{},'Игроки'),
-  W.owners.length?W.owners.map(o=>H('div',{class:'card bar'},H('span',{},o.nick+' · PIN: '+o.pin+' · лошадей: '+W.horses.filter(h=>h.owner===o.key).length),del(()=>{V.W.owners=W.owners.filter(x=>x!==o);W.horses=W.horses.filter(h=>h.owner!==o.key);W.appts=W.appts.filter(a=>a.owner!==o.key);save('Игрок удалён')}))):H('p',{class:'empty'},'Игроков пока нет.'),
+  W.owners.length?W.owners.map(o=>H('div',{class:'card bar'},H('span',{},o.nick+' · PIN: '+o.pin+' · лошадей: '+W.horses.filter(h=>h.owner===o.key).length),del(()=>{W.horses.filter(h=>h.owner===o.key&&h.pass).forEach(h=>ghDelFile(h.pass.id));V.W.owners=W.owners.filter(x=>x!==o);W.horses=W.horses.filter(h=>h.owner!==o.key);W.appts=W.appts.filter(a=>a.owner!==o.key);save('Игрок удалён')}))):H('p',{class:'empty'},'Игроков пока нет.'),
   H('div',{class:'card'},H('div',{class:'meta'},'Новый игрок или смена PIN. PIN не короче 6 символов, лучше с буквами и цифрами.'),H('div',{class:'row'},F('Ник',nk),F('PIN',np)),
    H('button',{onclick:()=>{const p=np.value.trim();if(!nk.value.trim())return;if(p.length<6){err='PIN должен быть не короче 6 символов';render();return}
     const k=key(nk.value),o=W.owners.find(x=>x.key===k);if(o)o.pin=p;else W.owners.push({nick:nk.value.trim(),key:k,pin:p});save('Игрок сохранён')}},'Сохранить игрока')),
   H('h2',{},E?'Изменить лошадь':'Новая лошадь'),
-  H('div',{class:'card'},W.owners.length?[F('Владелец',ow),H('div',{class:'row'},F('Кличка',f.name),F('Порода',f.breed)),H('div',{class:'row'},F('Возраст',f.age),F('Последняя прививка',f.vacc)),F('Последний осмотр',f.check),F('Назначения и рекомендации',f.notes),
-   H('div',{class:'bar'},H('button',{onclick:()=>{if(!f.name.value.trim())return;const o={id:E?E.id:uid(),owner:ow.value};for(const k in f)o[k]=f[k].value.trim();
-    if(E)Object.assign(E,o);else W.horses.push(o);editing=null;save('Лошадь сохранена')}},E?'Сохранить изменения':'Добавить лошадь'),E&&H('button',{class:'ghost',onclick:()=>{editing=null;render()}},'Отмена'))]:H('p',{class:'empty'},'Сначала добавьте игрока.')),
+  H('div',{class:'card'},W.owners.length?[F('Владелец',ow),H('div',{class:'row'},F('Кличка',f.name),F('Порода',f.breed)),H('div',{class:'row'},F('Возраст',f.age),F('Последняя прививка',f.vacc)),F('Последний осмотр',f.check),F('Назначения и рекомендации',f.notes),F('Паспорт лошади (фото или PDF, до 5 МБ)',fi),E&&E.pass&&H('div',{},passBlock(E,true),H('label',{class:'f',style:'display:flex;gap:8px;align-items:center;margin-top:8px'},rmp,H('span',{style:'display:inline;margin:0'},'Удалить прикреплённый паспорт'))),
+   H('div',{class:'bar'},sb=H('button',{onclick:async()=>{if(!f.name.value.trim())return;const o={id:E?E.id:uid(),owner:ow.value};for(const k in f)o[k]=f[k].value.trim();
+    const fl=fi.files[0];let pass=E&&E.pass||null,old=null;try{if(rmp.checked&&pass){old=pass;pass=null}if(fl){sb.disabled=true;sb.textContent='Загружаю файл…';const pp=await prep(fl),sl=await sealFile(pp.bytes),id='p'+uid();await ghPutFile(id,sl.out);if(pass)old=pass;pass={id,k:sl.k,name:pp.name,type:pp.type}}}catch(e){err=e.message;render();return}if(pass)o.pass=pass;if(E){Object.assign(E,o);if(!pass)delete E.pass}else W.horses.push(o);editing=null;if(old)ghDelFile(old.id);save('Лошадь сохранена')}},E?'Сохранить изменения':'Добавить лошадь'),E&&H('button',{class:'ghost',onclick:()=>{editing=null;render()}},'Отмена'))]:H('p',{class:'empty'},'Сначала добавьте игрока.')),
   H('h2',{},'Лошади'),
-  W.horses.map(h=>H('div',{class:'card bar'},H('span',{},h.name+' — '+nm(h.owner)),H('span',{},H('button',{class:'ghost',onclick:()=>{editing=h.id;render();scrollTo(0,0)}},'Изменить'),' ',del(()=>{W.horses=W.horses.filter(x=>x!==h);W.appts=W.appts.filter(a=>a.horse!==h.id);save('Лошадь удалена')})))),
+  W.horses.map(h=>H('div',{class:'card bar'},H('span',{},h.name+' — '+nm(h.owner)+(h.pass?' · паспорт есть':'')),H('span',{},H('button',{class:'ghost',onclick:()=>{editing=h.id;render();scrollTo(0,0)}},'Изменить'),' ',del(()=>{h.pass&&ghDelFile(h.pass.id);W.horses=W.horses.filter(x=>x!==h);W.appts=W.appts.filter(a=>a.horse!==h.id);save('Лошадь удалена')})))),
   H('h2',{},'Записи'),
   [...W.appts].sort((a,b)=>a.when<b.when?-1:1).map(a=>H('div',{class:'card bar'},H('span',{},fmt(a.when,1)+' · '+nm(a.owner)+' · '+((W.horses.find(h=>h.id===a.horse)||{}).name||'?')+(a.note?' · '+a.note:'')),del(()=>{W.appts=W.appts.filter(x=>x!==a);save('Запись удалена')}))),
   H('div',{class:'card'},H('div',{class:'meta'},'Подтвердить запись'),H('div',{class:'row'},F('Игрок',ao),F('Лошадь',ah)),F('Дата и время',ad),F('Заметка',an),
