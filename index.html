@@ -35,7 +35,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .err{color:var(--bad);font-weight:600;margin:8px 0}.empty{color:var(--mute)}
 .small{font-size:13px;color:var(--mute)}
 .pick{display:grid;gap:12px;margin-top:8px}.big{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:22px 20px;background:var(--card);color:var(--ink);border:1px solid var(--line);border-left:6px solid var(--green);border-radius:12px}.big b{font:700 24px "Zilla Slab",Georgia,serif}.big span{font-weight:400;color:var(--mute)}.warn{background:color-mix(in srgb,var(--hay) 35%,transparent);border-radius:8px;padding:10px 12px;margin:12px 0;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
-.tw{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--card)}.tw table{border-collapse:collapse;font-size:14px;min-width:100%}.tw th{background:var(--bg);text-align:left;font-size:12px;color:var(--mute);padding:8px;white-space:nowrap;border-bottom:1px solid var(--line)}.tw td{padding:2px;border-bottom:1px solid var(--line)}.tw input,.tw select{border:0;border-radius:4px;padding:6px;min-width:120px;background:transparent;font-size:14px}.tw input:focus,.tw select:focus{background:var(--bg)}.tabs2{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}.tabs2 button{background:transparent;color:var(--ink);border:1px solid var(--line)}.tabs2 button.on{background:var(--green);color:var(--on)}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--card)}.tw table{border-collapse:collapse;font-size:14px;min-width:100%}.tw th{background:var(--bg);text-align:left;font-size:12px;color:var(--mute);padding:8px;border-bottom:1px solid var(--line)}.tw td{padding:2px;border-bottom:1px solid var(--line)}.tw input,.tw select{border:0;border-radius:4px;padding:6px;min-width:0;background:transparent;font-size:14px}.tw select{width:auto}.tw input[type=date]{width:138px}.subbox input{width:100%!important}.tw input:focus,.tw select:focus{background:var(--bg)}.tabs2{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}.tabs2 button{background:transparent;color:var(--ink);border:1px solid var(--line)}.tabs2 button.on{background:var(--green);color:var(--on)}
 .sub td{background:var(--bg);padding:8px}.subbox{max-width:min(760px,88vw);position:sticky;left:8px}.subbox b{display:block;margin-bottom:6px}.row4{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}.row4 .f{margin:0}.subbox input{border:1px solid var(--line)!important;background:var(--card)!important}.note-b.on{background:var(--hay);color:var(--ink)}
 </style></head><body><main>
 <header>
@@ -200,7 +200,7 @@ function dbView(){const W=V.W;W.db=W.db||{};SH.forEach(x=>W.db[x.id]=W.db[x.id]|
    d.hidden=!d._open||tr.hidden};
   return H('div',{style:'display:flex;gap:2px;align-items:center'},sel,b)};
  const cell=(row,k,t)=>{if(Array.isArray(t)){if(!t.includes(row[k]))row[k]=t.includes('ПУСТО')?'ПУСТО':t[0];const s=H('select',{},t.map(o=>H('option',{value:o,selected:row[k]===o},o)));s.onchange=()=>{row[k]=s.value;mark()};if(sh.id==='mate'&&/^m\d$/.test(k))return slot(row,k,s);return s}
-  const i=H('input',{type:t==='date'?'date':'text',value:row[k]||''});i.oninput=()=>{row[k]=i.value;mark()};return i};
+  const i=H('input',{type:t==='date'?'date':'text',value:row[k]||''}),fit=()=>{if(t!=='date')i.style.width=Math.max(8,Math.ceil(i.value.length*1.15)+2)+'ch'};fit();i.oninput=()=>{row[k]=i.value;fit();mark()};return i};
  const tb=H('tbody'),trs=[];
  rows.forEach((row,i)=>{const x=H('button',{class:'danger',title:'Удалить строку',onclick:()=>{if(x.dataset.a){rows.splice(i,1);mark();render();return}x.dataset.a=1;x.textContent='Точно?';setTimeout(()=>{delete x.dataset.a;x.textContent='✕'},3000)}},'✕');
   const tr=H('tr',{},sh.cols.map(([k,l,t])=>H('td',{},cell(row,k,t))),H('td',{},x));tb.append(tr);trs.push([tr,row])});
@@ -218,7 +218,7 @@ function dbView(){const W=V.W;W.db=W.db||{};SH.forEach(x=>W.db[x.id]=W.db[x.id]|
   bar)}
 function landing(){const b=(role,t,s)=>H('button',{class:'big',onclick:()=>{ss.set('role',role);render()}},H('b',{},t),H('span',{},s));
  return H('div',{class:'pick'},b('player','Я участник','Посмотреть моих лошадей и записаться к ветеринару'),b('vet','Я ветеринар','Картотека и записи клиники'))}
-function render(){const a=$('#app');a.replaceChildren();document.querySelector('main').style.maxWidth=(V&&view==='db'&&ss.get('role')==='vet')?'1200px':'';
+function render(){const a=$('#app');a.replaceChildren();document.querySelector('main').style.maxWidth=(V&&view==='db'&&ss.get('role')==='vet')?'none':'';
  if(err)a.append(H('div',{class:'err'},err));if(msg)a.append(H('div',{class:'warn'},msg));
  const r=ss.get('role');
  if(r==='vet'&&!V&&!tried){a.append(H('p',{class:'meta'},'Входим…'));autoVet();return}
