@@ -37,6 +37,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .pick{display:grid;gap:12px;margin-top:8px}.big{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:22px 20px;background:var(--card);color:var(--ink);border:1px solid var(--line);border-left:6px solid var(--green);border-radius:12px}.big b{font:700 24px "Zilla Slab",Georgia,serif}.big span{font-weight:400;color:var(--mute)}.warn{background:color-mix(in srgb,var(--hay) 35%,transparent);border-radius:8px;padding:10px 12px;margin:12px 0;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
 .tw{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--card)}.tw table{border-collapse:collapse;font-size:14px;min-width:100%}.tw th{background:var(--bg);text-align:left;font-size:12px;color:var(--mute);padding:8px;border-bottom:1px solid var(--line)}.tw td{padding:2px;border-bottom:1px solid var(--line)}.tw input,.tw select{border:0;border-radius:4px;padding:6px;min-width:0;background:transparent;font-size:14px}.tw select{width:auto}.tw input[type=date]{width:138px}.subbox input{width:100%!important}.tw input:focus,.tw select:focus{background:var(--bg)}.tabs2{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}.tabs2 button{background:transparent;color:var(--ink);border:1px solid var(--line)}.tabs2 button.on{background:var(--green);color:var(--on)}
 .sub td{background:var(--bg);padding:8px}.subbox{max-width:min(760px,88vw);position:sticky;left:8px}.subbox b{display:block;margin-bottom:6px}.row4{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}.row4 .f{margin:0}.subbox input{border:1px solid var(--line)!important;background:var(--card)!important}.note-b.on{background:var(--hay);color:var(--ink)}
+.tabs2.sm{margin-top:-4px}.tabs2.sm button{padding:6px 12px;font-size:14px}.tabs2.sm button.on{background:color-mix(in srgb,var(--green) 25%,transparent);color:var(--ink);border-color:var(--green)}
 .gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-top:10px}.gal img{width:100%;height:120px;object-fit:cover;border-radius:8px;display:block}
 </style></head><body><main>
 <header>
@@ -218,7 +219,12 @@ function dbView(){const W=V.W;W.db=W.db||{};SH.forEach(x=>W.db[x.id]=W.db[x.id]|
   H('div',{class:'bar',style:'margin-bottom:10px'},qi,H('span',{},H('button',{onclick:()=>{q='';rows.push(newRow(sh));mark();render();const l=document.querySelector('.tw tbody tr:last-child');if(l){l.scrollIntoView({block:'center'});const i=l.querySelector('input');if(i)i.focus()}}},'+ Строка'),' ',H('button',{class:'ghost',onclick:()=>imp.click()},'Импорт'),' ',H('button',{class:'ghost',onclick:csv},'Скачать CSV'),imp)),
   rows.length?H('div',{class:'tw'},H('table',{},H('thead',{},H('tr',{},sh.cols.map(c=>H('th',{},c[1])),H('th'))),tb)):H('p',{class:'empty'},'В этой таблице пока нет строк. Добавьте первую кнопкой «+ Строка» или загрузите файл через «Импорт».'),
   bar)}
-const CATS=[['light','Лёгкие','ok'],['mid','Средние','soon'],['severe','Тяжёлые','bad']],localImg={};
+const SECS=[
+ {id:'dis',name:'Болезни',subs:[['light','Лёгкие','ok'],['mid','Средние','soon'],['severe','Тяжёлые','bad']]},
+ {id:'br',name:'Разведение',subs:[['br_info','Информация о разведении'],['br_foal','Информация о жеребятах'],['br_mate','Случки']]},
+ {id:'gen',name:'Общая информация',subs:[['gen','Общая информация']]}],localImg={};
+const secOf=c=>SECS.find(x=>x.subs.some(y=>y[0]===c))||SECS[0];
+const catList=SECS.flatMap(x=>x.subs.map(c=>[c[0],x.id==='gen'?x.name:x.name+' — '+c[1]]));
 const hbUrl=i=>localImg[i.id]||'hb/'+i.id+'.jpg';
 async function loadHB(){hbLoad=true;let a=[];
  try{if(V){const cur=await ghGet('handbook.json');a=cur&&cur.data.articles||[]}else{const r=await fetch('handbook.json?t='+Date.now(),{cache:'no-store'});if(r.ok)a=(await r.json()).articles||[]}}
@@ -227,7 +233,7 @@ async function loadHB(){hbLoad=true;let a=[];
 async function saveHB(mut){const cur=await ghGet('handbook.json'),data=cur?cur.data:{v:1,articles:[]};data.articles=data.articles||[];mut(data.articles);await ghPut(data,cur&&cur.sha,'handbook.json');HB={a:data.articles}}
 async function delArt(x){err='';msg='';try{await saveHB(arr=>{const k=arr.findIndex(z=>z.id===x.id);if(k>=0)arr.splice(k,1)});(x.imgs||[]).forEach(o=>ghDelFile(o.id,'hb/'+o.id+'.jpg'));msg='Статья удалена'}catch(ex){err='Не удалось удалить: '+ex.message}render()}
 function editor(x){
- const cs=H('select',{},CATS.map(c=>H('option',{value:c[0],selected:c[0]===x.cat},c[1]))),ti=H('input',{value:x.title,placeholder:'Название болезни'}),tx=H('textarea',{style:'min-height:220px'},x.text),fi=H('input',{type:'file',accept:'image/*',multiple:true});
+ const cs=H('select',{},catList.map(c=>H('option',{value:c[0],selected:c[0]===x.cat},c[1]))),ti=H('input',{value:x.title,placeholder:'Название статьи'}),tx=H('textarea',{style:'min-height:220px'},x.text),fi=H('input',{type:'file',accept:'image/*',multiple:true});
  let imgs=[...(x.imgs||[])];const gal=H('div',{class:'gal'}),e=H('div');
  const draw=()=>gal.replaceChildren(...imgs.map((i,n)=>H('div',{style:'position:relative'},H('img',{src:hbUrl(i),alt:''}),H('button',{class:'danger',style:'position:absolute;top:4px;right:4px;background:var(--card)',onclick:()=>{imgs.splice(n,1);draw()}},'✕'))));draw();
  const sb=H('button',{onclick:async()=>{if(!ti.value.trim()){e.replaceChildren(H('div',{class:'err'},'Введите название'));return}
@@ -238,13 +244,15 @@ function editor(x){
    gone.forEach(o=>ghDelFile(o.id,'hb/'+o.id+'.jpg'));hbCat=cs.value;ss.set('hbcat',hbCat);hbEdit=null;err='';msg='Статья сохранена. Для всех посетителей она появится в течение пары минут.'}
   catch(ex){err='Не удалось сохранить: '+ex.message}render()}},'Сохранить статью');
  return H('div',{class:'card'},H('h3',{style:'margin-bottom:10px'},x.id?'Изменить статью':'Новая статья'),F('Раздел',cs),F('Название',ti),F('Текст статьи',tx),F('Фотографии (можно несколько)',fi),gal,H('div',{class:'bar',style:'margin-top:10px'},sb,H('button',{class:'ghost',onclick:()=>{hbEdit=null;render()}},'Отмена')),e)}
-function bookView(){const a=HB.a,cat=CATS.find(c=>c[0]===hbCat)||CATS[0],list=a.filter(x=>x.cat===cat[0]);
+function bookView(){const a=HB.a,sec=secOf(hbCat),cat=sec.subs.find(c=>c[0]===hbCat)||sec.subs[0],list=a.filter(x=>x.cat===cat[0]);
+ const cnt=ids=>a.filter(x=>ids.includes(x.cat)).length,go=c=>{hbCat=c;ss.set('hbcat',c);hbEdit=null;msg='';render()};
  const head=H('div',{class:'bar'},H('h2',{style:'margin:0'},'Справочник'),H('button',{class:'ghost',onclick:()=>{ss.set('role',V?'vet':null);hbEdit=null;render()}},V?'← Кабинет':'← На главную')),
-  tabs=H('div',{class:'tabs2'},CATS.map(c=>H('button',{class:c[0]===cat[0]?'on':'',onclick:()=>{hbCat=c[0];ss.set('hbcat',c[0]);hbEdit=null;msg='';render()}},c[1]+' · '+a.filter(x=>x.cat===c[0]).length)));
- if(V&&hbEdit)return H('div',{},head,tabs,editor(hbEdit==='new'?{id:null,cat:cat[0],title:'',text:'',imgs:[]}:a.find(x=>x.id===hbEdit)||{id:null,cat:cat[0],title:'',text:'',imgs:[]}));
- return H('div',{},head,tabs,
+  tabs=H('div',{class:'tabs2'},SECS.map(x=>H('button',{class:x===sec?'on':'',onclick:()=>go(x.subs[0][0])},x.name+' · '+cnt(x.subs.map(c=>c[0]))))),
+  subs=sec.subs.length>1&&H('div',{class:'tabs2 sm'},sec.subs.map(c=>H('button',{class:c[0]===cat[0]?'on':'',onclick:()=>go(c[0])},c[1]+' · '+cnt([c[0]]))));
+ if(V&&hbEdit)return H('div',{},head,tabs,subs,editor(hbEdit==='new'?{id:null,cat:cat[0],title:'',text:'',imgs:[]}:a.find(x=>x.id===hbEdit)||{id:null,cat:cat[0],title:'',text:'',imgs:[]}));
+ return H('div',{},head,tabs,subs,
   V&&H('div',{style:'margin-bottom:12px'},H('button',{onclick:()=>{hbEdit='new';render()}},'+ Статья')),
-  list.length?list.map(x=>H('details',{class:'card '+cat[2]},H('summary',{style:'cursor:pointer;font-weight:700'},x.title),H('div',{style:'margin-top:10px;white-space:pre-wrap'},x.text),x.imgs&&x.imgs.length>0&&H('div',{class:'gal'},x.imgs.map(i=>H('a',{href:hbUrl(i),target:'_blank',rel:'noopener'},H('img',{src:hbUrl(i),alt:i.name||x.title,loading:'lazy'})))),V&&H('div',{class:'bar',style:'margin-top:10px'},H('button',{class:'ghost',onclick:()=>{hbEdit=x.id;render();scrollTo(0,0)}},'Изменить'),del(()=>delArt(x))))):H('p',{class:'empty'},'В этом разделе пока нет статей.'),
+  list.length?list.map(x=>H('details',{class:'card '+(cat[2]||'')},H('summary',{style:'cursor:pointer;font-weight:700'},x.title),H('div',{style:'margin-top:10px;white-space:pre-wrap'},x.text),x.imgs&&x.imgs.length>0&&H('div',{class:'gal'},x.imgs.map(i=>H('a',{href:hbUrl(i),target:'_blank',rel:'noopener'},H('img',{src:hbUrl(i),alt:i.name||x.title,loading:'lazy'})))),V&&H('div',{class:'bar',style:'margin-top:10px'},H('button',{class:'ghost',onclick:()=>{hbEdit=x.id;render();scrollTo(0,0)}},'Изменить'),del(()=>delArt(x))))):H('p',{class:'empty'},'В этом разделе пока нет статей.'),
   !V&&H('p',{class:'small'},H('a',{href:'#',style:'color:var(--green)',onclick:ev=>{ev.preventDefault();ss.set('role','vet');render()}},'Вход для ветеринаров'),' (чтобы редактировать справочник)'))}
 function landing(){const b=(role,t,s)=>H('button',{class:'big',onclick:()=>{ss.set('role',role);render()}},H('b',{},t),H('span',{},s));
  return H('div',{class:'pick'},b('player','Я участник','Посмотреть моих лошадей и записаться к ветеринару'),b('vet','Я ветеринар','Картотека и записи клиники'),b('book','Справочник','Болезни лошадей: лёгкие, средние и тяжёлые'))}
