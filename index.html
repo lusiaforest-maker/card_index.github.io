@@ -16,7 +16,7 @@ header img{height:72px;width:auto;flex:none}header{background:#7B68B5;color:#fff
 h1{font-size:28px;line-height:1.1}.sub{color:var(--mute);font-size:14px}
 h2{font-size:22px;margin:24px 0 10px}
 .card{background:var(--card);border:1px solid var(--line);border-left:6px solid var(--line);border-radius:10px;padding:14px 16px;margin:0 0 12px;max-width:100%}
-.card.ok{border-left-color:var(--ok)}.card.soon{border-left-color:var(--soon)}.card.bad{border-left-color:var(--bad)}
+.card.ok{border-left-color:var(--ok)}.card.soon{border-left-color:var(--soon)}.card.bad{border-left-color:var(--bad)}.card.chr{border-left-color:var(--green)}
 .card h3{font-size:20px}.meta{color:var(--mute);font-size:14px;margin:2px 0 8px}
 .rec{display:flex;gap:8px;align-items:baseline;font-size:15px;margin:3px 0}
 .rec i{flex:none;width:10px;height:10px;border-radius:50%;background:var(--ok);transform:translateY(1px)}
@@ -220,7 +220,7 @@ function dbView(){const W=V.W;W.db=W.db||{};SH.forEach(x=>W.db[x.id]=W.db[x.id]|
   rows.length?H('div',{class:'tw'},H('table',{},H('thead',{},H('tr',{},sh.cols.map(c=>H('th',{},c[1])),H('th'))),tb)):H('p',{class:'empty'},'В этой таблице пока нет строк. Добавьте первую кнопкой «+ Строка» или загрузите файл через «Импорт».'),
   bar)}
 const SECS=[
- {id:'dis',name:'Болезни',subs:[['light','Лёгкие','ok'],['mid','Средние','soon'],['severe','Тяжёлые','bad']]},
+ {id:'dis',name:'Болезни',subs:[['light','Лёгкие','ok'],['mid','Средние','soon'],['severe','Тяжёлые','bad'],['chronic','Хронические','chr']]},
  {id:'br',name:'Разведение',subs:[['br_info','Информация о разведении'],['br_foal','Информация о жеребятах'],['br_mate','Случки']]},
  {id:'gen',name:'Общая информация',subs:[['gen','Общая информация']]}],localImg={};
 const secOf=c=>SECS.find(x=>x.subs.some(y=>y[0]===c))||SECS[0];
