@@ -46,8 +46,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 </main>
 <script>
 const $=s=>document.querySelector(s);
-let V=null,P=null,err='',msg='',editing=null,tried=false,view='main',sheet='base',dbDirty=false,q='';
+let V=null,P=null,err='',msg='',editing=null,tried=false,triedP=false,view='main',sheet='base',dbDirty=false,q='';
 const ss={get(k){try{return sessionStorage.getItem(k)}catch(e){return null}},set(k,v){try{v==null?sessionStorage.removeItem(k):sessionStorage.setItem(k,v)}catch(e){}}};
+view=ss.get('view')||'main';sheet=ss.get('sheet')||'base';
 const H=(t,a,...k)=>{const e=document.createElement(t);for(const[n,v]of Object.entries(a||{})){if(n==='class')e.className=v;else if(n.startsWith('on'))e.addEventListener(n.slice(2),v);else if(v!=null&&v!==false)e.setAttribute(n,v)}for(const c of k.flat())if(c!=null&&c!==false)e.append(c);return e};
 const F=(l,el)=>H('label',{class:'f'},H('span',{},l),el);
 const key=n=>n.trim().toLowerCase();
@@ -110,7 +111,7 @@ async function save(ok){err='';msg='';
   for(const o of W.owners)out.owners[await pid(o.nick)]=await seal({nick:o.nick,horses:W.horses.filter(h=>h.owner===o.key),appts:W.appts.filter(a=>a.owner===o.key)},o.pin,key(o.nick));
   V.sha=await ghPut(out,V.sha);msg=(ok||'Сохранено')+'. Сайт обновится для игроков в течение пары минут.'}catch(e){err='Не удалось сохранить: '+e.message}render()}
 const del=fn=>{const b=H('button',{class:'danger',onclick:()=>{if(b.dataset.a)return fn();b.dataset.a=1;b.textContent='Точно удалить?';setTimeout(()=>{delete b.dataset.a;b.textContent='Удалить'},3000)}},'Удалить');return b};
-const back=()=>H('button',{class:'ghost',onclick:()=>{ss.set('role',null);V=null;P=null;tried=false;view='main';dbDirty=false;err='';msg='';render()}},'← На главную');
+const back=()=>H('button',{class:'ghost',onclick:()=>{ss.set('role',null);V=null;P=null;tried=false;triedP=false;ss.set('pl',null);view='main';dbDirty=false;err='';msg='';render()}},'← На главную');
 function recs(h){const r=[],v=days(h.vacc),c=days(h.check);
  r.push(v==null?['bad','Нет данных о прививке — запишитесь на вакцинацию']:v>365?['bad','Прививка просрочена — пора на вакцинацию']:v>300?['soon','Скоро пора на прививку']:['ok','Прививка действует']);
  r.push(c==null?['soon','Осмотр ещё не проводился']:c>180?['bad','Давно не было осмотра — пора записаться']:c>150?['soon','Скоро плановый осмотр']:['ok','Осмотр проходил недавно']);return r}
@@ -121,7 +122,7 @@ function card(h,api,flat){const r=recs(h);return H('div',{class:'card '+worst(r)
  r.map(x=>H('div',{class:'rec '+x[0]},H('i'),x[1])),
  h.notes&&H('div',{class:'note'},H('b',{},'Назначение ветеринара: '),h.notes),h.pass&&passBlock(h,!!api))}
 function playerView(){const hs=P.horses,ap=[...P.appts].sort((a,b)=>a.when<b.when?-1:1);
- return H('div',{},H('div',{class:'bar'},H('h2',{},'Лошади игрока '+P.nick),H('button',{class:'ghost',onclick:()=>{P=null;ss.set('role',null);render()}},'Выйти')),
+ return H('div',{},H('div',{class:'bar'},H('h2',{},'Лошади игрока '+P.nick),H('button',{class:'ghost',onclick:()=>{P=null;triedP=false;ss.set('pl',null);ss.set('role',null);render()}},'Выйти')),
   hs.length?hs.map(h=>card(h)):H('p',{class:'empty'},'У вас пока нет лошадей в картотеке. Загляните в клинику — ветеринар внесёт их после первого осмотра.'),
   H('h2',{},'Записи к ветеринару'),
   ap.length?ap.map(a=>H('div',{class:'card ok'},H('b',{},fmt(a.when,1)),H('div',{class:'meta'},(hs.find(h=>h.id===a.horse)||{}).name||'Лошадь'),a.note&&H('div',{},a.note))):H('p',{class:'empty'},'Подтверждённых записей нет.'),
@@ -136,7 +137,7 @@ function bookForm(o,hs){const out=H('div'),sel=H('select',{},hs.map(h=>H('option
 function loginView(){const n=H('input',{autocomplete:'off',placeholder:'Ваш ник в майнкрафте'}),p=H('input',{type:'password',placeholder:'PIN-код от ветеринара'}),e=H('div');
  const go=async()=>{if(!n.value.trim()||!p.value.trim())return;e.textContent='Проверяю…';let j;
   try{const r=await fetch('data.json?t='+Date.now(),{cache:'no-store'});if(!r.ok)throw 0;j=await r.json()}catch(x){e.replaceChildren(H('div',{class:'err'},'Не удалось загрузить данные клиники. Попробуйте позже.'));return}
-  try{const b=j.owners&&j.owners[await pid(n.value)];if(!b)throw 0;P=await unseal(b,p.value.trim(),key(n.value));render()}catch(x){e.replaceChildren(H('div',{class:'err'},'Ник или PIN не подошли. PIN выдаёт ветеринар в клинике.'))}};
+  try{const b=j.owners&&j.owners[await pid(n.value)];if(!b)throw 0;P=await unseal(b,p.value.trim(),key(n.value));ss.set('pl',JSON.stringify({n:n.value,p:p.value.trim()}));render()}catch(x){e.replaceChildren(H('div',{class:'err'},'Ник или PIN не подошли. PIN выдаёт ветеринар в клинике.'))}};
  p.addEventListener('keydown',ev=>{if(ev.key==='Enter')go()});
  return H('div',{class:'card'},H('h2',{style:'margin-top:0'},'Вход для участников'),F('Ник',n),F('PIN-код',p),H('div',{class:'bar'},H('button',{onclick:go},'Показать моих лошадей'),back()),e)}
 function vetLogin(){const g=gcfg(),pw=H('input',{type:'password',placeholder:'Пароль ветеринара'}),rp=H('input',{value:g.o&&g.r?g.o+'/'+g.r:'',placeholder:'владелец/репозиторий'}),tk=H('input',{type:'password',placeholder:g.t?'Токен сохранён в этом браузере':'Токен GitHub'}),e=H('div'),rm=H('input',{type:'checkbox',style:'width:auto'});
@@ -218,11 +219,17 @@ function dbView(){const W=V.W;W.db=W.db||{};SH.forEach(x=>W.db[x.id]=W.db[x.id]|
   bar)}
 function landing(){const b=(role,t,s)=>H('button',{class:'big',onclick:()=>{ss.set('role',role);render()}},H('b',{},t),H('span',{},s));
  return H('div',{class:'pick'},b('player','Я участник','Посмотреть моих лошадей и записаться к ветеринару'),b('vet','Я ветеринар','Картотека и записи клиники'))}
+async function autoPlayer(){triedP=true;let a;try{a=JSON.parse(ss.get('pl'))}catch(e){}
+ if(!a){render();return}
+ try{const r=await fetch('data.json?t='+Date.now(),{cache:'no-store'});if(!r.ok)throw 0;const j=await r.json(),b=j.owners&&j.owners[await pid(a.n)];if(!b)throw 1;P=await unseal(b,a.p,key(a.n))}catch(e){ss.set('pl',null)}
+ render()}
 function render(){const a=$('#app');a.replaceChildren();document.querySelector('main').style.maxWidth=(V&&view==='db'&&ss.get('role')==='vet')?'none':'';
  if(err)a.append(H('div',{class:'err'},err));if(msg)a.append(H('div',{class:'warn'},msg));
- const r=ss.get('role');
+ const r=ss.get('role');ss.set('view',view);ss.set('sheet',sheet);
+ if(r==='player'&&!P&&!triedP&&ss.get('pl')){a.append(H('p',{class:'meta'},'Входим…'));autoPlayer();return}
  if(r==='vet'&&!V&&!tried){a.append(H('p',{class:'meta'},'Входим…'));autoVet();return}
  a.append(r==='vet'?(V?(view==='db'?dbView():vetView()):vetLogin()):r==='player'?(P?playerView():loginView()):landing())}
+window.addEventListener('beforeunload',e=>{if(dbDirty){e.preventDefault();e.returnValue=''}});
 render();
 </script>
 </body></html>
